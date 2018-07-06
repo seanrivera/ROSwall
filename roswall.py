@@ -1,3 +1,4 @@
+# TODO: update
 # Copyright (C) 2011 Nippon Telegraph and Telephone Corporation.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,12 +27,18 @@ from ryu.lib.packet import ipv4
 from ryu.lib.packet import packet_utils
 
 
-class SimpleSwitch13(app_manager.RyuApp):
+class ROSWall(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
 
     def __init__(self, *args, **kwargs):
-        super(SimpleSwitch13, self).__init__(*args, **kwargs)
+        super(ROSWALL, self).__init__(*args, **kwargs)
         self.mac_to_port = {}
+        # Current internal representation of the ROS system
+        self.ros_state_table = {}
+        # Permissions for the ROS system. A dict of permissions objects. Abstract
+        self.ros_permissions_table = {} 
+        # Permissions for the Robot itself, designed for things like ssh. 
+        self.port_permissions_table = {}
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
