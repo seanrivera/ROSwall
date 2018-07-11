@@ -25,7 +25,7 @@ from ryu.lib.packet import ether_types
 from ryu.lib.packet import tcp
 from ryu.lib.packet import ipv4
 from ryu.lib.packet import packet_utils
-
+from firewall_rules import Firewall, Port
 
 class ROSWall(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
@@ -39,6 +39,9 @@ class ROSWall(app_manager.RyuApp):
         self.ros_permissions_table = {} 
         # Permissions for the Robot itself, designed for things like ssh. 
         self.port_permissions_table = {}
+        self.fw: Firewall = Firewall()
+        # TODO: Hardcoded Name
+        self.fw.load_firewall_rules(fname="example.fw")
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):

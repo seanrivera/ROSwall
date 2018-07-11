@@ -1,0 +1,8 @@
+/rosout, /rosmaster, 0, 100, false, allow ;
+/rosout, /rosmaster, 100, 300, false, drop ;
+/rosmaster, /rosout, 0, 100, false, allow ;
+/rosmaster, /rosout, 0, 300, false, drop ;
+/rossecure, /rosmaster, 0, 100, true, allow ;
+/rossecure, /rosmaster, 100, 10000, false, drop ;
+/rosmaster, /rossecure, 0, 100, false, mirror /rosout ;
+/rosmaster, /rossecure, 100, 1000, false, drop ;

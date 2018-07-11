@@ -1,0 +1,20 @@
+rule_list:
+rules = Rule*
+;
+
+Rule:
+src=Port ','  dst=Port ',' min_bw=INT ',' max_bw=INT',' encryption=BOOL',' action=Action (action_target=Port)? ';'
+;
+
+Port:
+    name=/\/\w*/
+;
+
+// Mirror and reroute take a target
+Action:
+"allow"|"drop"|"flag"|"mirror"|"reroute"
+;
+
+Comment:
+    /\/\/.*$/
+;
