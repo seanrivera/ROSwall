@@ -14,6 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import time
 from ryu.base import app_manager
 from ryu.controller import ofp_event
 from ryu.controller.handler import CONFIG_DISPATCHER, MAIN_DISPATCHER
@@ -24,6 +25,8 @@ from ryu.lib.packet import ethernet
 from ryu.lib.packet import ether_types
 from ryu.lib.packet import tcp
 from ryu.lib.packet import ipv4
+from ryu.lib.packet import arp 
+from ryu.lib.packet import icmp
 from ryu.lib.packet import packet_utils
 
 
@@ -31,7 +34,7 @@ class ROSWall(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
 
     def __init__(self, *args, **kwargs):
-        super(ROSWALL, self).__init__(*args, **kwargs)
+        super(ROSWall, self).__init__(*args, **kwargs)
         self.mac_to_port = {}
         # Current internal representation of the ROS system
         self.ros_state_table = {}
@@ -80,6 +83,7 @@ class ROSWall(app_manager.RyuApp):
         if ev.msg.msg_len < ev.msg.total_len:
             self.logger.debug("packet truncated: only %s of %s bytes",
                               ev.msg.msg_len, ev.msg.total_len)
+        t=time.time()
         msg = ev.msg
         datapath = msg.datapath
         ofproto = datapath.ofproto
@@ -89,10 +93,13 @@ class ROSWall(app_manager.RyuApp):
         pkt = packet.Packet(msg.data)
         eth = pkt.get_protocols(ethernet.ethernet)[0]
         ipv4_pkt = pkt.get_protocol(ipv4.ipv4)
+        icmp_pkt = pkt.get_protocol(icmp.icmp)
         tcp_pkt = pkt.get_protocol(tcp.tcp)
+        arp_pkt = pkt.get_protocol(arp.arp)
 
         if eth.ethertype == ether_types.ETH_TYPE_LLDP:
             # ignore lldp packet
+            elasped = time.time()-t
             return
         dst = eth.dst
         src = eth.src
@@ -111,8 +118,45 @@ class ROSWall(app_manager.RyuApp):
             out_port = ofproto.OFPP_FLOOD
 
         actions = [parser.OFPActionOutput(out_port)]
+        if arp_pkt:
+            data = msg.data
+            self.logger.info("Intercepted ARP packet with source port {} and dest port {}".format(arp_pkt.src_mac, arp_pkt.dst_mac))
+            out = parser.OFPPacketOut(datapath=datapath, buffer_id=msg.buffer_id,
+                                      in_port=in_port, actions=actions, data=data)
+            match = parser.OFPMatch(in_port=in_port, eth_type=eth.ethertype,
+                arp_sha=arp_pkt.src_mac, arp_tha=arp_pkt.dst_mac)
+            if msg.buffer_id != ofproto.OFP_NO_BUFFER:
+                self.logger.info("Adding ARP FLOW NOW PLZ")
+                self.add_flow(datapath, 1, match, actions, msg.buffer_id)
+                elapsed = time.time()-t
+                print("Duration " + str(elapsed))
+                return
+            else:
+                self.logger.info("Adding ARP FLOW NOW PLZ")
+                self.add_flow(datapath, 1, match, actions)
+            datapath.send_msg(out)
+            return 
 
-        if tcp_pkt:
+        elif icmp_pkt:
+            data = msg.data
+            self.logger.info("Intercepted ICMP packet with type {}".format(icmp_pkt.type))
+            out = parser.OFPPacketOut(datapath=datapath, buffer_id=msg.buffer_id,
+                                      in_port=in_port, actions=actions, data=data)
+            match = parser.OFPMatch(in_port=in_port, eth_type=eth.ethertype,
+                ip_proto=ipv4_pkt.proto, icmpv4_type=icmp_pkt.type,
+                ipv4_dst=ipv4_pkt.dst, ipv4_src=ipv4_pkt.src)
+            if msg.buffer_id != ofproto.OFP_NO_BUFFER:
+                self.logger.info("Adding ICMP FLOW NOW PLZ")
+                self.add_flow(datapath, 1, match, actions, msg.buffer_id)
+                elapsed = time.time()-t
+                print("Duration " + str(elapsed))
+                return
+            else:
+                self.logger.info("Adding ICMP FLOW NOW PLZ")
+                self.add_flow(datapath, 1, match, actions)
+            datapath.send_msg(out)
+            return 
+        elif tcp_pkt:
             data = msg.data
             self.logger.info("Intercepted TCP packet with source port {} and dest port {}".format(tcp_pkt.src_port, tcp_pkt.dst_port))
             out = parser.OFPPacketOut(datapath=datapath, buffer_id=msg.buffer_id,
@@ -123,23 +167,45 @@ class ROSWall(app_manager.RyuApp):
             if msg.buffer_id != ofproto.OFP_NO_BUFFER:
                 self.logger.info("Adding TCP FLOW NOW PLZ")
                 self.add_flow(datapath, 1, match, actions, msg.buffer_id)
+                elapsed = time.time()-t
+                print("Duration " + str(elapsed))
                 return
             else:
                 self.logger.info("Adding TCP FLOW NOW PLZ")
                 self.add_flow(datapath, 1, match, actions)
             datapath.send_msg(out)
             return 
+        elif ipv4_pkt:
+            data = msg.data
+            self.logger.info("Intercepted Generic packet with source port {} and dest port {}".format(ipv4_pkt.src, ipv4_pkt.dst))
+            out = parser.OFPPacketOut(datapath=datapath, buffer_id=msg.buffer_id,
+                                      in_port=in_port, actions=actions, data=data)
+            match = parser.OFPMatch(in_port=in_port, eth_type=eth.ethertype,
+                ip_proto=ipv4_pkt.proto, ipv4_src=ipv4_pkt.src, ipv4_dst=ipv4_pkt.dst)
+            if msg.buffer_id != ofproto.OFP_NO_BUFFER:
+                self.logger.info("Adding GENERIC FLOW NOW PLZ")
+                self.add_flow(datapath, 1, match, actions, msg.buffer_id)
+                elapsed = time.time()-t
+                print("Duration " + str(elapsed))
+                return
+            else:
+                self.logger.info("Adding GENERIC FLOW NOW PLZ")
+                self.add_flow(datapath, 1, match, actions)
+            datapath.send_msg(out)
+            return 
 
         # install a flow to avoid packet_in next time
-        if out_port != ofproto.OFPP_FLOOD and not tcp_pkt:
+        elif out_port != ofproto.OFPP_FLOOD:
             match = parser.OFPMatch(in_port=in_port, eth_dst=dst, eth_src=src)
-            # verify if we have a valid buffer_id, if yes avoid to send both
-            # flow_mod & packet_out
-            #if msg.buffer_id != ofproto.OFP_NO_BUFFER:
-                #self.add_flow(datapath, 1, match, actions, msg.buffer_id)
-                #return
-            #else:
-                #self.add_flow(datapath, 1, match, actions)
+             #verify if we have a valid buffer_id, if yes avoid to send both
+             #flow_mod & packet_out
+            if msg.buffer_id != ofproto.OFP_NO_BUFFER:
+                self.add_flow(datapath, 1, match, actions, msg.buffer_id)
+                elasped = time.time()-t
+                print("Duration " + str(elapsed))
+                return
+            else:
+                self.add_flow(datapath, 1, match, actions)
         data = None
         if msg.buffer_id == ofproto.OFP_NO_BUFFER:
             data = msg.data
